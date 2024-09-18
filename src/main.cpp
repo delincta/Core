@@ -195,6 +195,16 @@ void loop_application_task()
     switch(mode)
     {
         case IDLE:    // IDLE MODE - turns data emission off
+            if (is_downloading) {
+                dump_scope_datas(scope);
+                is_downloading = false;
+            } else {
+            printk("% 7d:", scope.has_trigged());
+            printk("% 7.2f:", (double)duty_cycle);
+            printk("% 7d:", num_trig_ratio_point);
+            printk("% 7.2f:", (double)V_high_value);
+            printk("% 7.2f\n", (double)V1_low_value);
+            }
             spin.led.turnOff();
             if(!print_done) {
                 printk("IDLE \n");
