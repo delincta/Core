@@ -276,6 +276,8 @@ void loop_control_task()
 
         case POWER_ON:     // POWER_ON mode turns the power ON
 
+            scope.acquire();
+
             //Tests if the legs were turned off and does it only once ]
             if(!pwm_enable_leg_1 && power_leg_settings[LEG1].settings[BOOL_LEG]) {shield.power.start(LEG1); pwm_enable_leg_1 = true;}
             if(!pwm_enable_leg_2 && power_leg_settings[LEG2].settings[BOOL_LEG]) {shield.power.start(LEG2); pwm_enable_leg_2 = true;}
