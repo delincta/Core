@@ -26,12 +26,18 @@
  * @author Luiz Villa <luiz.villa@laas.fr>
  */
 
+//--------------Zephyr----------------------------------------
+#include <zephyr/console/console.h>
+
 //--------------OWNTECH APIs----------------------------------
 #include "SpinAPI.h"
 #include "TaskAPI.h"
 #include "ShieldAPI.h"
 #include "pid.h"
 #include "comm_protocol.h"
+#include "arm_math_types.h"
+#include <ScopeMimicry.h>
+#include "CommunicationAPI.h"
 
 #define RECORD_SIZE 128 // Number of point to record
 
@@ -76,6 +82,14 @@ static float meas_data; // temp storage meas value (ctrl task)
 
 float32_t starting_duty_cycle = 0.1;
 
+float32_t duty_cycle = 0.3;
+extern bool enable_acq;
+static float32_t trig_ratio;
+static float32_t begin_trig_ratio = 0.05;
+static float32_t end_trig_ratio = 0.95;
+ uint32_t num_trig_ratio_point = 1024;
+//static float32_t voltage_reference = 5.0; //voltage reference
+
 static float32_t kp = 0.000215;
 static float32_t Ti = 7.5175e-5;
 static float32_t Td = 0.0;
@@ -88,10 +102,48 @@ static PidParams pid_params(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
 static Pid pid1;
 static Pid pid2;
 
+const uint16_t NB_DATAS = 2048;
+const float32_t minimal_step = 1.0F / (float32_t) NB_DATAS;
+static uint16_t number_of_cycle = 2;
+static ScopeMimicry scope(NB_DATAS, 7);
+extern bool is_downloading;
+
 static uint32_t counter = 0;
 static uint32_t print_counter = 0;
 
 static float32_t local_analog_value=0;
+
+//---------------------------------------------------------------
+
+enum serial_interface_menu_mode // LIST OF POSSIBLE MODES FOR THE OWNTECH CONVERTER
+{
+    IDLEMODE = 0,
+    POWERMODE
+};
+
+uint8_t mode_scope = IDLEMODE;
+
+// trigger function for scope manager
+bool a_trigger() {
+    return enable_acq;
+}
+
+void dump_scope_datas(ScopeMimicry &scope)  {
+    uint8_t *buffer_scope = scope.get_buffer();
+    uint16_t buffer_size = scope.get_buffer_size() >> 2; // we divide by 4 (4 bytes per float data)
+    printk("begin record\n");
+    printk("#");
+    for (uint16_t k=0;k < scope.get_nb_channel(); k++) {
+        printk("%s,", scope.get_channel_name(k));
+    }
+    printk("\n");
+    printk("# %d\n", scope.get_final_idx());
+    for (uint16_t k=0;k < buffer_size; k++) {
+        printk("%08x\n", *((uint32_t *)buffer_scope + k));
+        task.suspendBackgroundUs(100);
+    }
+    printk("end record\n");
+}
 
 //---------------SETUP FUNCTIONS----------------------------------
 
