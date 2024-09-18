@@ -154,6 +154,21 @@ void setup_routine()
     shield.power.initBuck(LEG1);
     shield.power.initBuck(LEG2);
 
+    scope.connectChannel(I1_low_value, "I1_low");
+    scope.connectChannel(V1_low_value, "V1_low");
+    scope.connectChannel(I2_low_value, "I2_low");
+    scope.connectChannel(V2_low_value, "V2_low");
+    scope.connectChannel(duty_cycle, "duty_cycle");
+    scope.connectChannel(V_high_value, "V_high");
+    scope.connectChannel(trig_ratio, "trig_ratio");
+    scope.set_trigger(&a_trigger);
+    scope.set_delay(0.0F);
+    scope.start();
+
+    trig_ratio = 0.05;
+
+
+
     AppTask_num = task.createBackground(loop_application_task);
     CommTask_num = task.createBackground(loop_communication_task);
     task.createCritical(&loop_control_task, control_task_period);
