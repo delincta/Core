@@ -154,6 +154,13 @@ void setup_routine()
     shield.power.initBuck(LEG1);
     shield.power.initBuck(LEG2);
 
+    // communication.sync.initSlave(); // start the synchronisation
+    // // data.enableAcquisition(2, 35); // enable the analog measurement
+    // // data.triggerAcquisition(2);     // starts the analog measurement
+    // communication.can.setCanNodeAddr(CAN_SLAVE_ADDR);
+    // communication.can.setBroadcastPeriod(10);
+    // communication.can.setControlPeriod(10);
+
     scope.connectChannel(I1_low_value, "I1_low");
     scope.connectChannel(V1_low_value, "V1_low");
     scope.connectChannel(I2_low_value, "I2_low");
@@ -180,6 +187,8 @@ void setup_routine()
     task.startBackground(CommTask_num);
     task.startCritical();
 
+    communication.rs485.configureCustom(buffer_tx, buffer_rx, sizeof(ConsigneStruct_t), slave_reception_function, 10625000, true); // custom configuration for RS485
+
 }
 
 //---------------LOOP FUNCTIONS----------------------------------
@@ -199,11 +208,12 @@ void loop_application_task()
                 dump_scope_datas(scope);
                 is_downloading = false;
             } else {
-            printk("% 7d:", scope.has_trigged());
-            printk("% 7.2f:", (double)duty_cycle);
-            printk("% 7d:", num_trig_ratio_point);
-            printk("% 7.2f:", (double)V_high_value);
-            printk("% 7.2f\n", (double)V1_low_value);
+            scope.has_trigged();
+            // printk("% 7d:", scope.has_trigged());
+            // printk("% 7.2f:", (double)duty_cycle);
+            // printk("% 7d:", num_trig_ratio_point);
+            // printk("% 7.2f:", (double)V_high_value);
+            // printk("% 7.2f\n", (double)V1_low_value);
             }
             spin.led.turnOff();
             if(!print_done) {
