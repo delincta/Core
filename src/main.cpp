@@ -67,6 +67,9 @@ float32_t I2_low_value;
 float32_t I_high_value;
 float32_t V_high_value;
 
+float32_t T1_value;
+float32_t T2_value;
+
  float32_t delta_V1;
  float32_t V1_max = 0.0;
  float32_t V1_min = 0.0;
