@@ -150,6 +150,39 @@ void dump_scope_datas(ScopeMimicry &scope)  {
     printk("end record\n");
 }
 
+
+void performTest(leg_t test_leg){
+
+    scope.acquire(); // enable scope acquisition 
+
+    // doing the duty cycle loop
+    duty_cycle = lower_bound;
+    power_leg_settings[test_leg].duty_cycle = duty_cycle; // settind the duty cycle to the lower bound (0.0F)
+    if (test_leg == LEG1) power_leg_settings[test_leg].duty_cycle = pid1.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
+    if (test_leg == LEG2) power_leg_settings[test_leg].duty_cycle = pid2.calculateWithReturn(power_leg_settings[test_leg].reference_value , *power_leg_settings[test_leg].tracking_variable);
+#ifdef CONFIG_SHIELD_OWNVERTER
+    if (test_leg == LEG3) power_leg_settings[test_leg].duty_cycle = pid3.calculateWithReturn(power_leg_settings[test_leg].reference_value , *power_leg_settings[test_leg].tracking_variable);
+#endif
+    shield.power.setDutyCycle(test_leg, power_leg_settings[test_leg].duty_cycle);
+
+
+    task.suspendBackgroundUs(10);
+
+    float32_t up_duty_cycle = 0.2;
+    duty_cycle = power_leg_settings[test_leg].duty_cycle + up_duty_cycle;
+    power_leg_settings[test_leg].duty_cycle = duty_cycle;
+    shield.power.setDutyCycle(test_leg, power_leg_settings[test_leg].duty_cycle);
+    task.suspendBackgroundUs(2);
+    duty_cycle = power_leg_settings[test_leg].duty_cycle - up_duty_cycle;
+    power_leg_settings[test_leg].duty_cycle = duty_cycle;
+    shield.power.setDutyCycle(test_leg, power_leg_settings[test_leg].duty_cycle);
+
+    dump_scope_datas(scope);
+
+
+}
+
+
 //---------------SETUP FUNCTIONS----------------------------------
 
 void setup_routine()
@@ -249,7 +282,7 @@ void loop_application_task()
             break;
     }
 
-     task.suspendBackgroundMs(100);
+    task.suspendBackgroundMs(100);
 }
 
 
@@ -294,7 +327,7 @@ void loop_control_task()
 
         case POWER_ON:     // POWER_ON mode turns the power ON
 
-            scope.acquire();
+            
 
             //Tests if the legs were turned off and does it only once ]
             if(!pwm_enable_leg_1 && power_leg_settings[LEG1].settings[BOOL_LEG]) {shield.power.start(LEG1); pwm_enable_leg_1 = true;}
