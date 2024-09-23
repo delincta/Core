@@ -93,17 +93,19 @@ static float32_t end_trig_ratio = 0.95;
  uint32_t num_trig_ratio_point = 1024;
 //static float32_t voltage_reference = 5.0; //voltage reference
 
-static float32_t kp = 0.000215;
-static float32_t Ti = 7.5175e-5;
-static float32_t Td = 0.0;
-static float32_t N = 0.0;
-static float32_t upper_bound = 1.0F;
-static float32_t lower_bound = 0.0F;
-static float32_t Ts = control_task_period * 1e-6;
-static PidParams pid_params(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
+float32_t V_ref = 25/2;
+float32_t kp = 0.000215;
+float32_t Ti = 7.5175e-5;
+float32_t Td = 0.0;
+float32_t N = 0.0;
+float32_t upper_bound = 1.0F;
+float32_t lower_bound = 0.0F;
+float32_t Ts = control_task_period * 1e-6;
+PidParams pid_params(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
 
-static Pid pid1;
-static Pid pid2;
+Pid pid1;
+Pid pid2;
+Pid pid3;
 
 const uint16_t NB_DATAS = 2048;
 const float32_t minimal_step = 1.0F / (float32_t) NB_DATAS;
@@ -185,6 +187,9 @@ void setup_routine()
 
     pid1.init(pid_params);
     pid2.init(pid_params);
+#ifdef CONFIG_SHIELD_OWNVERTER
+    pid3.init(pid_params); 
+#endif
 
     task.startBackground(AppTask_num);
     task.startBackground(CommTask_num);
