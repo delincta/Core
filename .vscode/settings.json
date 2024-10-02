@@ -9,6 +9,7 @@
     ".github": false
   },
   "files.associations": {
-    "*.tcc": "cpp"
+    "*.tcc": "cpp",
+    "cstring": "cpp"
   }
 }

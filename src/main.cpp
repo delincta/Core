@@ -57,7 +57,7 @@ void loop_control_task();     // Code to be executed in real time in the critica
 static uint32_t control_task_period = 100; //[us] period of the control task
 static bool pwm_enable_leg_1 = false;            //[bool] state of the PWM (ctrl task)
 static bool pwm_enable_leg_2 = false;            //[bool] state of the PWM (ctrl task)
-
+int cpt = 0;
 /* Measurement  variables */
 
 float32_t V1_low_value;
@@ -107,12 +107,14 @@ Pid pid1;
 Pid pid2;
 Pid pid3;
 
+leg_t test_leg = LEG1; // Default to LEG1
+
 const uint16_t NB_DATAS = 2048;
 const float32_t minimal_step = 1.0F / (float32_t) NB_DATAS;
 static uint16_t number_of_cycle = 2;
 static ScopeMimicry scope(NB_DATAS, 7);
 extern bool is_downloading;
-
+bool is_test_performing = false;
 static uint32_t counter = 0;
 static uint32_t print_counter = 0;
 
@@ -151,36 +153,7 @@ void dump_scope_datas(ScopeMimicry &scope)  {
 }
 
 
-void performTest(leg_t test_leg){
 
-    scope.acquire(); // enable scope acquisition 
-
-    // doing the duty cycle loop
-    duty_cycle = lower_bound;
-    power_leg_settings[test_leg].duty_cycle = duty_cycle; // settind the duty cycle to the lower bound (0.0F)
-    if (test_leg == LEG1) power_leg_settings[test_leg].duty_cycle = pid1.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
-    if (test_leg == LEG2) power_leg_settings[test_leg].duty_cycle = pid2.calculateWithReturn(power_leg_settings[test_leg].reference_value , *power_leg_settings[test_leg].tracking_variable);
-#ifdef CONFIG_SHIELD_OWNVERTER
-    if (test_leg == LEG3) power_leg_settings[test_leg].duty_cycle = pid3.calculateWithReturn(power_leg_settings[test_leg].reference_value , *power_leg_settings[test_leg].tracking_variable);
-#endif
-    shield.power.setDutyCycle(test_leg, power_leg_settings[test_leg].duty_cycle);
-
-
-    task.suspendBackgroundUs(10);
-
-    float32_t up_duty_cycle = 0.2;
-    duty_cycle = power_leg_settings[test_leg].duty_cycle + up_duty_cycle;
-    power_leg_settings[test_leg].duty_cycle = duty_cycle;
-    shield.power.setDutyCycle(test_leg, power_leg_settings[test_leg].duty_cycle);
-    task.suspendBackgroundUs(2);
-    duty_cycle = power_leg_settings[test_leg].duty_cycle - up_duty_cycle;
-    power_leg_settings[test_leg].duty_cycle = duty_cycle;
-    shield.power.setDutyCycle(test_leg, power_leg_settings[test_leg].duty_cycle);
-
-    dump_scope_datas(scope);
-
-
-}
 
 
 //---------------SETUP FUNCTIONS----------------------------------
@@ -313,6 +286,12 @@ void loop_control_task()
     if (meas_data != NO_VALUE)
         I_high_value = meas_data;
 
+
+    
+    
+
+
+
     //----------- DEPLOYS MODES----------------
     switch(mode){
         case IDLE:         // IDLE and POWER_OFF modes turn the power off
@@ -327,44 +306,85 @@ void loop_control_task()
 
         case POWER_ON:     // POWER_ON mode turns the power ON
 
-            
+            scope.acquire(); // enable scope acquisition
 
-            //Tests if the legs were turned off and does it only once ]
-            if(!pwm_enable_leg_1 && power_leg_settings[LEG1].settings[BOOL_LEG]) {shield.power.start(LEG1); pwm_enable_leg_1 = true;}
-            if(!pwm_enable_leg_2 && power_leg_settings[LEG2].settings[BOOL_LEG]) {shield.power.start(LEG2); pwm_enable_leg_2 = true;}
-
-            //Tests if the legs were turned on and does it only once ]
-            if(pwm_enable_leg_1 && !power_leg_settings[LEG1].settings[BOOL_LEG]) {shield.power.stop(LEG1); pwm_enable_leg_1 = false;}
-            if(pwm_enable_leg_2 && !power_leg_settings[LEG2].settings[BOOL_LEG]) {shield.power.stop(LEG2); pwm_enable_leg_2 = false;}
-
-            //calls the pid calculation if the converter in either in mode buck or boost for a given dynamically set reference value
-            if(power_leg_settings[LEG1].settings[BOOL_BUCK] || power_leg_settings[LEG1].settings[BOOL_BOOST]){
-                power_leg_settings[LEG1].duty_cycle = pid1.calculateWithReturn(power_leg_settings[LEG1].reference_value , *power_leg_settings[LEG1].tracking_variable);
-            }
-
-            if(power_leg_settings[LEG2].settings[BOOL_BUCK] || power_leg_settings[LEG2].settings[BOOL_BOOST]){
-                power_leg_settings[LEG2].duty_cycle = pid2.calculateWithReturn(power_leg_settings[LEG2].reference_value , *power_leg_settings[LEG2].tracking_variable);
-            }
-
-            if(power_leg_settings[LEG1].settings[BOOL_LEG]){
-                if(power_leg_settings[LEG1].settings[BOOL_BOOST]){
-                    shield.power.setDutyCycle(LEG1, (1-power_leg_settings[LEG1].duty_cycle) ); //inverses the convention of the leg in case of changing from buck to boost
-                } else {
-                    shield.power.setDutyCycle(LEG1, power_leg_settings[LEG1].duty_cycle ); //uses the normal convention by default
+            if (is_test_performing) {
+            // if (is_test_performing && cpt < 0 ) {
+                
+                // doing the duty cycle loop
+                duty_cycle = lower_bound;
+                // power_leg_settings[test_leg].duty_cycle = duty_cycle; // settind the duty cycle to the lower bound (0.0F)
+                // printk("cpt : %d; ", cpt);
+                shield.power.setDutyCycle(test_leg, duty_cycle);
+                if (test_leg == LEG1) duty_cycle = pid1.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
+                if (test_leg == LEG2) duty_cycle = pid2.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
+            #ifdef CONFIG_SHIELD_OWNVERTER
+                if (test_leg == LEG3) duty_cycle = pid3.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
+            #endif
+                duty_cycle = 0.5;
+                shield.power.setDutyCycle(test_leg, duty_cycle);
+                printk("duty cycle : %7.2f \n", (double)duty_cycle);
+                
+                
+                cpt = 0;
+                while(cpt < 600){
+                    if ((cpt < 100) || (cpt > 500)) shield.power.setDutyCycle(test_leg, 0.5);
+                    float32_t up_duty_cycle = 0.2;
+                    if ((cpt > 100) && (cpt < 500)){
+                        duty_cycle = 0.7;
+                        shield.power.setDutyCycle(test_leg, 0.5 + up_duty_cycle);
+                        printk("duty cycle : %7.2f \n", 0.7);
+                    }
+                    cpt++;
+                    printk("cpt : %d", cpt);
+                    
                 }
-            }
+                power_leg_settings[test_leg].duty_cycle = duty_cycle;
+                // dump_scope_datas(scope); 
+                cpt = 0; 
+                is_test_performing = false;
+                is_downloading = true;
+                // task.suspendBackgroundUs(10);
 
-            if(power_leg_settings[LEG2].settings[BOOL_LEG]){
-                if(power_leg_settings[LEG2].settings[BOOL_BOOST]){
-                    shield.power.setDutyCycle(LEG2, (1-power_leg_settings[LEG2].duty_cycle) ); //inverses the convention of the leg in case of changing from buck to boost
-                }else{
-                    shield.power.setDutyCycle(LEG2, power_leg_settings[LEG2].duty_cycle); //uses the normal convention by default
+                
+            } 
+            else {
+                //Tests if the legs were turned off and does it only once ]
+                if(!pwm_enable_leg_1 && power_leg_settings[LEG1].settings[BOOL_LEG]) {shield.power.start(LEG1); pwm_enable_leg_1 = true;}
+                if(!pwm_enable_leg_2 && power_leg_settings[LEG2].settings[BOOL_LEG]) {shield.power.start(LEG2); pwm_enable_leg_2 = true;}
+
+                //Tests if the legs were turned on and does it only once ]
+                if(pwm_enable_leg_1 && !power_leg_settings[LEG1].settings[BOOL_LEG]) {shield.power.stop(LEG1); pwm_enable_leg_1 = false;}
+                if(pwm_enable_leg_2 && !power_leg_settings[LEG2].settings[BOOL_LEG]) {shield.power.stop(LEG2); pwm_enable_leg_2 = false;}
+
+                //calls the pid calculation if the converter in either in mode buck or boost for a given dynamically set reference value
+                if(power_leg_settings[LEG1].settings[BOOL_BUCK] || power_leg_settings[LEG1].settings[BOOL_BOOST]){
+                    power_leg_settings[LEG1].duty_cycle = pid1.calculateWithReturn(power_leg_settings[LEG1].reference_value , *power_leg_settings[LEG1].tracking_variable);
                 }
+
+                if(power_leg_settings[LEG2].settings[BOOL_BUCK] || power_leg_settings[LEG2].settings[BOOL_BOOST]){
+                    power_leg_settings[LEG2].duty_cycle = pid2.calculateWithReturn(power_leg_settings[LEG2].reference_value , *power_leg_settings[LEG2].tracking_variable);
+                }
+
+                if(power_leg_settings[LEG1].settings[BOOL_LEG]){
+                    if(power_leg_settings[LEG1].settings[BOOL_BOOST]){
+                        shield.power.setDutyCycle(LEG1, (1-power_leg_settings[LEG1].duty_cycle) ); //inverses the convention of the leg in case of changing from buck to boost
+                    } else {
+                        shield.power.setDutyCycle(LEG1, power_leg_settings[LEG1].duty_cycle ); //uses the normal convention by default
+                    }
+                }
+
+                if(power_leg_settings[LEG2].settings[BOOL_LEG]){
+                    if(power_leg_settings[LEG2].settings[BOOL_BOOST]){
+                        shield.power.setDutyCycle(LEG2, (1-power_leg_settings[LEG2].duty_cycle) ); //inverses the convention of the leg in case of changing from buck to boost
+                    }else{
+                        shield.power.setDutyCycle(LEG2, power_leg_settings[LEG2].duty_cycle); //uses the normal convention by default
+                    }
+                }
+
+                if(V1_low_value>V1_max) V1_max = V1_low_value;  //gets the maximum V1 voltage value. This is used for the capacitor test
+                if(V2_low_value>V2_max) V2_max = V2_low_value;  //gets the maximum V2 voltage value. This is used for the capacitor test
             }
-
-            if(V1_low_value>V1_max) V1_max = V1_low_value;  //gets the maximum V1 voltage value. This is used for the capacitor test
-            if(V2_low_value>V2_max) V2_max = V2_low_value;  //gets the maximum V2 voltage value. This is used for the capacitor test
-
             break;
         default:
             break;
