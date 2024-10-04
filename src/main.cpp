@@ -57,7 +57,7 @@ void loop_control_task();     // Code to be executed in real time in the critica
 static uint32_t control_task_period = 100; //[us] period of the control task
 static bool pwm_enable_leg_1 = false;            //[bool] state of the PWM (ctrl task)
 static bool pwm_enable_leg_2 = false;            //[bool] state of the PWM (ctrl task)
-int cpt = 0;
+int cpt = 1;
 /* Measurement  variables */
 
 float32_t V1_low_value;
@@ -86,11 +86,13 @@ static float meas_data; // temp storage meas value (ctrl task)
 float32_t starting_duty_cycle = 0.1;
 
 float32_t duty_cycle = 0.3;
+float32_t duty_cycle_50_perc = 0.5;
+float32_t duty_cycle_70_perc = 0.5;
 extern bool enable_acq;
 static float32_t trig_ratio;
 static float32_t begin_trig_ratio = 0.05;
 static float32_t end_trig_ratio = 0.95;
- uint32_t num_trig_ratio_point = 1024;
+ uint32_t num_trig_ratio_point = 200;
 //static float32_t voltage_reference = 5.0; //voltage reference
 
 float32_t V_ref = 25/2;
@@ -109,16 +111,24 @@ Pid pid3;
 
 leg_t test_leg = LEG1; // Default to LEG1
 
-const uint16_t NB_DATAS = 2048;
+const uint16_t NB_DATAS = 1000;
 const float32_t minimal_step = 1.0F / (float32_t) NB_DATAS;
 static uint16_t number_of_cycle = 2;
 static ScopeMimicry scope(NB_DATAS, 7);
 extern bool is_downloading;
 bool is_test_performing = false;
+bool dc_open_cycle;
 static uint32_t counter = 0;
 static uint32_t print_counter = 0;
 
 static float32_t local_analog_value=0;
+
+
+int cpt_close_loop = 400;
+int cpt_open_loop = 800;
+int cpt_step_begin = 500;
+int cpt_step_end = 700;
+float32_t duty_cyle_step = 0.1;
 
 //---------------------------------------------------------------
 
@@ -261,6 +271,7 @@ void loop_application_task()
 
 void loop_control_task()
 {
+    // shield.sensors.getValues
     // ------------- GET SENSOR MEASUREMENTS ---------------------
     meas_data = shield.sensors.getLatestValue(V1_LOW);
     if (meas_data != NO_VALUE)
@@ -308,45 +319,59 @@ void loop_control_task()
 
             scope.acquire(); // enable scope acquisition
 
-            if (is_test_performing) {
-            // if (is_test_performing && cpt < 0 ) {
-                
-                // doing the duty cycle loop
-                duty_cycle = lower_bound;
-                // power_leg_settings[test_leg].duty_cycle = duty_cycle; // settind the duty cycle to the lower bound (0.0F)
-                // printk("cpt : %d; ", cpt);
-                shield.power.setDutyCycle(test_leg, duty_cycle);
-                if (test_leg == LEG1) duty_cycle = pid1.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
-                if (test_leg == LEG2) duty_cycle = pid2.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
-            #ifdef CONFIG_SHIELD_OWNVERTER
-                if (test_leg == LEG3) duty_cycle = pid3.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
-            #endif
-                duty_cycle = 0.5;
-                shield.power.setDutyCycle(test_leg, duty_cycle);
-                printk("duty cycle : %7.2f \n", (double)duty_cycle);
-                
-                
-                cpt = 0;
-                while(cpt < 600){
-                    if ((cpt < 100) || (cpt > 500)) shield.power.setDutyCycle(test_leg, 0.5);
-                    float32_t up_duty_cycle = 0.2;
-                    if ((cpt > 100) && (cpt < 500)){
-                        duty_cycle = 0.7;
-                        shield.power.setDutyCycle(test_leg, 0.5 + up_duty_cycle);
-                        printk("duty cycle : %7.2f \n", 0.7);
-                    }
+            if (is_test_performing ) {
+                scope.has_trigged();
+                if (dc_open_cycle){
+                    duty_cycle = lower_bound;
+                    shield.power.setDutyCycle(test_leg, duty_cycle);
+                    if (test_leg == LEG1) duty_cycle = pid1.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
+                    if (test_leg == LEG2) duty_cycle = pid2.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
+                #ifdef CONFIG_SHIELD_OWNVERTER
+                    if (test_leg == LEG3) duty_cycle = pid3.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
+                #endif
+                    shield.power.setDutyCycle(test_leg, duty_cycle);
+                    power_leg_settings[test_leg].duty_cycle = duty_cycle;
                     cpt++;
-                    printk("cpt : %d", cpt);
-                    
-                }
-                power_leg_settings[test_leg].duty_cycle = duty_cycle;
-                // dump_scope_datas(scope); 
-                cpt = 0; 
-                is_test_performing = false;
-                is_downloading = true;
-                // task.suspendBackgroundUs(10);
+                    if (cpt >= cpt_close_loop) dc_open_cycle = false;
+                } else if (dc_open_cycle == false && cpt < cpt_open_loop){
+                        if ((cpt < cpt_step_begin) || (cpt > cpt_step_end)) {
+                            duty_cycle = duty_cycle_50_perc;
+                            shield.power.setDutyCycle(test_leg, duty_cycle);
+                        }
 
-                
+                        // ramp up the duty cycle
+                        if ((cpt>= cpt_step_begin) && (cpt <= cpt_step_begin+1)) {
+                            duty_cycle += duty_cyle_step; 
+                            shield.power.setDutyCycle(test_leg, duty_cycle);
+                            power_leg_settings[test_leg].duty_cycle = duty_cycle;
+                        }
+
+                        //  duty cycle at 70% 
+                        if ((cpt >= cpt_step_begin + 2) && (cpt <= cpt_step_end - 2)){
+                            duty_cycle = duty_cycle_70_perc;
+                        }
+                        
+                        // ramp down the duty cycle
+                        if ((cpt >= cpt_step_end-1) && (cpt <= cpt_step_end)) {
+                            duty_cycle -= duty_cyle_step; 
+                            shield.power.setDutyCycle(test_leg, duty_cycle);
+                            power_leg_settings[test_leg].duty_cycle = duty_cycle;
+                        }
+            
+                        cpt++;
+                        
+                } else {
+                    power_leg_settings[test_leg].duty_cycle = duty_cycle;
+                    shield.power.setDutyCycle(test_leg,duty_cycle);
+                    trig_ratio += (end_trig_ratio - begin_trig_ratio) / (float32_t)num_trig_ratio_point;
+                    if (trig_ratio > end_trig_ratio) { // make a cycle
+                        trig_ratio = begin_trig_ratio;
+                    }
+                    shield.power.setTriggerValue(test_leg, trig_ratio);
+                    
+                    if (cpt >= 1000) {is_test_performing = false; is_downloading = true; cpt = 1; mode = IDLE;}
+                }
+
             } 
             else {
                 //Tests if the legs were turned off and does it only once ]
