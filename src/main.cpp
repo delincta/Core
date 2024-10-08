@@ -85,9 +85,7 @@ static float meas_data; // temp storage meas value (ctrl task)
 
 float32_t starting_duty_cycle = 0.1;
 
-float32_t duty_cycle = 0.3;
-float32_t duty_cycle_50_perc = 0.5;
-float32_t duty_cycle_70_perc = 0.5;
+
 extern bool enable_acq;
 static float32_t trig_ratio;
 static float32_t begin_trig_ratio = 0.05;
@@ -95,7 +93,7 @@ static float32_t end_trig_ratio = 0.95;
  uint32_t num_trig_ratio_point = 200;
 //static float32_t voltage_reference = 5.0; //voltage reference
 
-float32_t V_ref = 25/2;
+float32_t V_ref = 5;
 float32_t kp = 0.000215;
 float32_t Ti = 7.5175e-5;
 float32_t Td = 0.0;
@@ -104,6 +102,7 @@ float32_t upper_bound = 1.0F;
 float32_t lower_bound = 0.0F;
 float32_t Ts = control_task_period * 1e-6;
 PidParams pid_params(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
+Pid pid;
 
 Pid pid1;
 Pid pid2;
@@ -114,7 +113,7 @@ leg_t test_leg = LEG1; // Default to LEG1
 const uint16_t NB_DATAS = 1000;
 const float32_t minimal_step = 1.0F / (float32_t) NB_DATAS;
 static uint16_t number_of_cycle = 2;
-static ScopeMimicry scope(NB_DATAS, 7);
+static ScopeMimicry scope(NB_DATAS, 5);
 extern bool is_downloading;
 bool is_test_performing = false;
 bool dc_open_cycle;
@@ -123,11 +122,14 @@ static uint32_t print_counter = 0;
 
 static float32_t local_analog_value=0;
 
-
-int cpt_close_loop = 400;
-int cpt_open_loop = 800;
-int cpt_step_begin = 500;
-int cpt_step_end = 700;
+static bool enable_test_leg = false;
+float32_t duty_cycle = lower_bound;
+float32_t duty_cycle_50_perc = 0.5;
+float32_t duty_cycle_70_perc = 0.7;
+int cpt_close_loop = 500;
+int cpt_open_loop = 900;
+int cpt_step_begin = 600;
+int cpt_step_end = 800;
 float32_t duty_cyle_step = 0.1;
 
 //---------------------------------------------------------------
@@ -182,8 +184,8 @@ void setup_routine()
     // communication.can.setBroadcastPeriod(10);
     // communication.can.setControlPeriod(10);
 
-    scope.connectChannel(I1_low_value, "I1_low");
-    scope.connectChannel(V1_low_value, "V1_low");
+    // scope.connectChannel(I1_low_value, "I1_low");
+    // scope.connectChannel(V1_low_value, "V1_low");
     scope.connectChannel(I2_low_value, "I2_low");
     scope.connectChannel(V2_low_value, "V2_low");
     scope.connectChannel(duty_cycle, "duty_cycle");
@@ -317,23 +319,42 @@ void loop_control_task()
 
         case POWER_ON:     // POWER_ON mode turns the power ON
 
-            scope.acquire(); // enable scope acquisition
+            // shield.power.start(LEG1);
+            
 
             if (is_test_performing ) {
+                if (!enable_test_leg){
+                    shield.power.start(test_leg);
+                    enable_test_leg = true;
+                    duty_cycle = lower_bound;
+                    shield.power.setDutyCycle(test_leg, duty_cycle);                    
+                }
+                scope.acquire(); // enable scope acquisition
+                a_trigger();
                 scope.has_trigged();
                 if (dc_open_cycle){
-                    duty_cycle = lower_bound;
-                    shield.power.setDutyCycle(test_leg, duty_cycle);
-                    if (test_leg == LEG1) duty_cycle = pid1.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
-                    if (test_leg == LEG2) duty_cycle = pid2.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
+                    
+                    if (test_leg == LEG1) {
+                        duty_cycle = pid1.calculateWithReturn(V_ref , 
+                                                            *power_leg_settings[test_leg].tracking_variable);
+                    }
+
+                    if (test_leg == LEG2) {
+                        duty_cycle = pid2.calculateWithReturn(V_ref , 
+                                                            *power_leg_settings[test_leg].tracking_variable);
+                    }
                 #ifdef CONFIG_SHIELD_OWNVERTER
-                    if (test_leg == LEG3) duty_cycle = pid3.calculateWithReturn(V_ref , *power_leg_settings[test_leg].tracking_variable);
+                    if (test_leg == LEG3) {
+                        duty_cycle = pid3.calculateWithReturn(V_ref , 
+                                                            *power_leg_settings[test_leg].tracking_variable);
+                    }
                 #endif
                     shield.power.setDutyCycle(test_leg, duty_cycle);
                     power_leg_settings[test_leg].duty_cycle = duty_cycle;
                     cpt++;
                     if (cpt >= cpt_close_loop) dc_open_cycle = false;
-                } else if (dc_open_cycle == false && cpt < cpt_open_loop){
+                } 
+                else if (dc_open_cycle == false && cpt < cpt_open_loop){
                         if ((cpt < cpt_step_begin) || (cpt > cpt_step_end)) {
                             duty_cycle = duty_cycle_50_perc;
                             shield.power.setDutyCycle(test_leg, duty_cycle);
@@ -349,6 +370,8 @@ void loop_control_task()
                         //  duty cycle at 70% 
                         if ((cpt >= cpt_step_begin + 2) && (cpt <= cpt_step_end - 2)){
                             duty_cycle = duty_cycle_70_perc;
+                            shield.power.setDutyCycle(test_leg, duty_cycle);
+                            power_leg_settings[test_leg].duty_cycle = duty_cycle;
                         }
                         
                         // ramp down the duty cycle
@@ -360,7 +383,8 @@ void loop_control_task()
             
                         cpt++;
                         
-                } else {
+                } 
+                else {
                     power_leg_settings[test_leg].duty_cycle = duty_cycle;
                     shield.power.setDutyCycle(test_leg,duty_cycle);
                     trig_ratio += (end_trig_ratio - begin_trig_ratio) / (float32_t)num_trig_ratio_point;
@@ -368,10 +392,33 @@ void loop_control_task()
                         trig_ratio = begin_trig_ratio;
                     }
                     shield.power.setTriggerValue(test_leg, trig_ratio);
+                    cpt++;
                     
-                    if (cpt >= 1000) {is_test_performing = false; is_downloading = true; cpt = 1; mode = IDLE;}
-                }
+                    if (cpt >= 1000) {
+                        is_test_performing = false; 
+                        is_downloading = true; 
+                        cpt = 1; 
+                        trig_ratio = begin_trig_ratio;
+                        duty_cycle = 0.1;
+                        power_leg_settings[test_leg].duty_cycle = duty_cycle;
+                        shield.power.setDutyCycle(test_leg,duty_cycle);
+                        shield.power.stop(test_leg);
+                        if (test_leg == LEG1) {
+                            pid1.reset();
+                        }
 
+                        if (test_leg == LEG2) {
+                            pid2.reset();
+                        }
+                    #ifdef CONFIG_SHIELD_OWNVERTER
+                        if (test_leg == LEG3) {
+                            pid3.reset();
+                        }
+                    #endif
+                        enable_test_leg = false;
+                        mode = IDLE;
+                    }
+                }
             } 
             else {
                 //Tests if the legs were turned off and does it only once ]
