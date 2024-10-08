@@ -67,6 +67,14 @@ float32_t I2_low_value;
 float32_t I_high_value;
 float32_t V_high_value;
 
+float32_t V_testleg_1 = 0;
+float32_t V_testleg_2 = 0;
+float32_t V_testleg_3 = 0;
+float32_t V_testleg_4 = 0;
+float32_t V_testleg_5 = 0;
+float32_t V_testleg_6 = 0;
+
+
 float32_t T1_value;
 float32_t T2_value;
 
@@ -82,6 +90,8 @@ int8_t AppTask_num, CommTask_num;
 static float32_t acquisition_moment = 0.06;
 
 static float meas_data; // temp storage meas value (ctrl task)
+static float* meas_tab;
+static uint32_t nb_meas_data_values = 6;
 
 float32_t starting_duty_cycle = 0.1;
 
@@ -113,7 +123,7 @@ leg_t test_leg = LEG1; // Default to LEG1
 const uint16_t NB_DATAS = 1000;
 const float32_t minimal_step = 1.0F / (float32_t) NB_DATAS;
 static uint16_t number_of_cycle = 2;
-static ScopeMimicry scope(NB_DATAS, 5);
+static ScopeMimicry scope(NB_DATAS, 11);
 extern bool is_downloading;
 bool is_test_performing = false;
 bool dc_open_cycle;
@@ -188,6 +198,12 @@ void setup_routine()
     // scope.connectChannel(V1_low_value, "V1_low");
     scope.connectChannel(I2_low_value, "I2_low");
     scope.connectChannel(V2_low_value, "V2_low");
+    scope.connectChannel(V_testleg_1, "V_testleg_1");
+    scope.connectChannel(V_testleg_2, "V_testleg_2");
+    scope.connectChannel(V_testleg_3, "V_testleg_3");
+    scope.connectChannel(V_testleg_4, "V_testleg_4");
+    scope.connectChannel(V_testleg_5, "V_testleg_5");
+    scope.connectChannel(V_testleg_6, "V_testleg_6");
     scope.connectChannel(duty_cycle, "duty_cycle");
     scope.connectChannel(V_high_value, "V_high");
     scope.connectChannel(trig_ratio, "trig_ratio");
@@ -300,6 +316,8 @@ void loop_control_task()
         I_high_value = meas_data;
 
 
+
+
     
     
 
@@ -323,15 +341,55 @@ void loop_control_task()
             
 
             if (is_test_performing ) {
+                if (test_leg == LEG1) {
+                    meas_tab = shield.sensors.getValues(V1_LOW, nb_meas_data_values);
+                }
+                if (test_leg == LEG2) {
+                    meas_tab = shield.sensors.getValues(V2_LOW, nb_meas_data_values);
+                }
+                #ifdef CONFIG_SHIELD_OWNVERTER
+                if (test_leg == LEG3) {
+                    meas_tab = shield.sensors.getValues(V3_LOW, nb_meas_data_values);
+                }
+                #endif
+
+                if ((cpt >= cpt_step_begin - 4) && (cpt_step_end + 4)) {
+                    if (*meas_tab != NO_VALUE)
+                        V_testleg_1 = *meas_tab;
+                    
+                    if (*(meas_tab + 1) != NO_VALUE)
+                        V_testleg_2 = *(meas_tab + 1);
+                    
+                    if (*(meas_tab + 2) != NO_VALUE)
+                        V_testleg_3 = *(meas_tab + 2);
+                    
+                    if (*(meas_tab + 3) != NO_VALUE)
+                        V_testleg_4 = *(meas_tab + 3);
+                    
+                    if (*(meas_tab + 4) != NO_VALUE)
+                        V_testleg_5 = *(meas_tab + 4);
+                    
+                    if (*(meas_tab + 5) != NO_VALUE)
+                        V_testleg_6 = *(meas_tab + 5);
+                }
+                else {
+                    V_testleg_1 = 0;
+                    V_testleg_2 = 0;
+                    V_testleg_3 = 0;
+                    V_testleg_4 = 0;
+                    V_testleg_5 = 0;
+                    V_testleg_6 = 0;
+                }
+
+
+
                 if (!enable_test_leg){
                     shield.power.start(test_leg);
                     enable_test_leg = true;
                     duty_cycle = lower_bound;
                     shield.power.setDutyCycle(test_leg, duty_cycle);                    
                 }
-                scope.acquire(); // enable scope acquisition
-                a_trigger();
-                scope.has_trigged();
+
                 if (dc_open_cycle){
                     
                     if (test_leg == LEG1) {
@@ -419,6 +477,9 @@ void loop_control_task()
                         mode = IDLE;
                     }
                 }
+                scope.acquire(); // enable scope acquisition
+                a_trigger();
+                scope.has_trigged();
             } 
             else {
                 //Tests if the legs were turned off and does it only once ]
