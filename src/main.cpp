@@ -67,12 +67,11 @@ float32_t I2_low_value;
 float32_t I_high_value;
 float32_t V_high_value;
 
-float32_t V_testleg_1 = 0;
-float32_t V_testleg_2 = 0;
-float32_t V_testleg_3 = 0;
-float32_t V_testleg_4 = 0;
-float32_t V_testleg_5 = 0;
-float32_t V_testleg_6 = 0;
+float32_t V_testleg_1 = 0.0;
+float32_t V_testleg_2 = 0.0;
+float32_t V_testleg_3 = 0.0;
+float32_t V_testleg_4 = 0.0;
+float32_t V_testleg_5 = 0.0;
 
 
 float32_t T1_value;
@@ -123,10 +122,10 @@ leg_t test_leg = LEG1; // Default to LEG1
 const uint16_t NB_DATAS = 1000;
 const float32_t minimal_step = 1.0F / (float32_t) NB_DATAS;
 static uint16_t number_of_cycle = 2;
-static ScopeMimicry scope(NB_DATAS, 11);
+static ScopeMimicry scope(NB_DATAS, 10);
 extern bool is_downloading;
 bool is_test_performing = false;
-bool dc_open_cycle;
+bool dc_open_cycle = false;
 static uint32_t counter = 0;
 static uint32_t print_counter = 0;
 
@@ -157,23 +156,71 @@ bool a_trigger() {
     return enable_acq;
 }
 
-void dump_scope_datas(ScopeMimicry &scope)  {
+// void dump_scope_datas(ScopeMimicry &scope)  {
+//     uint8_t *buffer_scope = scope.get_buffer();
+//     uint16_t buffer_size = scope.get_buffer_size() >> 2; // we divide by 4 (4 bytes per float data)
+//     printk("begin record\n");
+//     printk("#");
+//     for (uint16_t k=0;k < scope.get_nb_channel(); k++) {
+//         printk("%s,", scope.get_channel_name(k));
+//     }
+//     printk("\n");
+//     printk("# %d\n", scope.get_final_idx());
+//     for (uint16_t k=0;k < buffer_size; k++) {
+//         printk("%08x\n", *((uint32_t *)buffer_scope + k));
+//         task.suspendBackgroundUs(100);
+//     }
+//     printk("end record\n");
+// }
+
+
+
+void dump_scope_datas(ScopeMimicry &scope) {
     uint8_t *buffer_scope = scope.get_buffer();
-    uint16_t buffer_size = scope.get_buffer_size() >> 2; // we divide by 4 (4 bytes per float data)
+    uint16_t buffer_size = scope.get_buffer_size() >> 2; // Taille du buffer en floats
+    const uint16_t segment_size = 100; // Taille d'un segment (nombre de données envoyées à la fois)
+    char command[20];
+
     printk("begin record\n");
     printk("#");
-    for (uint16_t k=0;k < scope.get_nb_channel(); k++) {
+    for (uint16_t k = 0; k < scope.get_nb_channel(); k++) {
         printk("%s,", scope.get_channel_name(k));
     }
     printk("\n");
     printk("# %d\n", scope.get_final_idx());
-    for (uint16_t k=0;k < buffer_size; k++) {
-        printk("%08x\n", *((uint32_t *)buffer_scope + k));
-        task.suspendBackgroundUs(100);
+
+    // Envoyer les segments en réponse à une commande "NEXT_SEGMENT"
+    for (uint16_t k = 0; k < buffer_size; k += segment_size) {
+        uint16_t end = (k + segment_size > buffer_size) ? buffer_size : k + segment_size;
+
+        // Attendre la commande "NEXT_SEGMENT" avant d'envoyer un segment
+        int command_len = serial_read_command(command, sizeof(command));  // Fonction fictive pour lire la commande reçue sur le port série
+        if (command_len > 0 && strcmp(command, "NEXT_SEGMENT") == 0) {
+            // Envoyer un segment de données
+            for (uint16_t i = k; i < end; i++) {
+                printk("%08x\n", *((uint32_t *)buffer_scope + i));
+            }
+        }
     }
+
     printk("end record\n");
 }
 
+// Fonction pour lire la commande série du PC
+int serial_read_command(char* buffer, int max_len) {
+    int len = 0;
+    while (len < max_len) {
+        if (serial_available()) {  // Vérifier si des données sont disponibles sur le port série
+            buffer[len] = serial_read();  // Lire un caractère depuis le port série
+            if (buffer[len] == '\n') {
+                buffer[len] = '\0';  // Terminer la chaîne de caractères
+                break;
+            }
+            len++;
+        }
+    }
+    return len;
+}
 
 
 
@@ -203,7 +250,6 @@ void setup_routine()
     scope.connectChannel(V_testleg_3, "V_testleg_3");
     scope.connectChannel(V_testleg_4, "V_testleg_4");
     scope.connectChannel(V_testleg_5, "V_testleg_5");
-    scope.connectChannel(V_testleg_6, "V_testleg_6");
     scope.connectChannel(duty_cycle, "duty_cycle");
     scope.connectChannel(V_high_value, "V_high");
     scope.connectChannel(trig_ratio, "trig_ratio");
@@ -315,7 +361,42 @@ void loop_control_task()
     if (meas_data != NO_VALUE)
         I_high_value = meas_data;
 
+    if (test_leg == LEG1) {
+        meas_tab = shield.sensors.getValues(V1_LOW, nb_meas_data_values);
+    }
+    else if (test_leg == LEG2) {
+        meas_tab = shield.sensors.getValues(V2_LOW, nb_meas_data_values);
+    }
+#ifdef CONFIG_SHIELD_OWNVERTER
+    else {
+        meas_tab = shield.sensors.getValues(V3_LOW, nb_meas_data_values);
+    }
+#endif
 
+    if (((cpt >= cpt_step_begin - 4) && (cpt <= cpt_step_begin + 4))
+        || ((cpt >= cpt_step_end - 4) && (cpt <= cpt_step_end + 4))) {
+        if (*meas_tab != NO_VALUE)
+            V_testleg_1 = *meas_tab;
+                    
+        if (*(meas_tab + 1) != NO_VALUE)
+            V_testleg_2 = *(meas_tab + 1);
+                    
+        if (*(meas_tab + 2) != NO_VALUE)
+            V_testleg_3 = *(meas_tab + 2);
+                    
+        if (*(meas_tab + 3) != NO_VALUE)
+            V_testleg_4 = *(meas_tab + 3);
+                    
+        if (*(meas_tab + 4) != NO_VALUE)
+            V_testleg_5 = *(meas_tab + 4);
+      }
+    else {
+        V_testleg_1 = 0.0;
+        V_testleg_2 = 0.0;
+        V_testleg_3 = 0.0;
+        V_testleg_4 = 0.0;
+        V_testleg_5 = 0.0;
+    }
 
 
     
@@ -341,54 +422,17 @@ void loop_control_task()
             
 
             if (is_test_performing ) {
-                if (test_leg == LEG1) {
-                    meas_tab = shield.sensors.getValues(V1_LOW, nb_meas_data_values);
-                }
-                if (test_leg == LEG2) {
-                    meas_tab = shield.sensors.getValues(V2_LOW, nb_meas_data_values);
-                }
-                #ifdef CONFIG_SHIELD_OWNVERTER
-                if (test_leg == LEG3) {
-                    meas_tab = shield.sensors.getValues(V3_LOW, nb_meas_data_values);
-                }
-                #endif
-
-                if ((cpt >= cpt_step_begin - 4) && (cpt_step_end + 4)) {
-                    if (*meas_tab != NO_VALUE)
-                        V_testleg_1 = *meas_tab;
-                    
-                    if (*(meas_tab + 1) != NO_VALUE)
-                        V_testleg_2 = *(meas_tab + 1);
-                    
-                    if (*(meas_tab + 2) != NO_VALUE)
-                        V_testleg_3 = *(meas_tab + 2);
-                    
-                    if (*(meas_tab + 3) != NO_VALUE)
-                        V_testleg_4 = *(meas_tab + 3);
-                    
-                    if (*(meas_tab + 4) != NO_VALUE)
-                        V_testleg_5 = *(meas_tab + 4);
-                    
-                    if (*(meas_tab + 5) != NO_VALUE)
-                        V_testleg_6 = *(meas_tab + 5);
-                }
-                else {
-                    V_testleg_1 = 0;
-                    V_testleg_2 = 0;
-                    V_testleg_3 = 0;
-                    V_testleg_4 = 0;
-                    V_testleg_5 = 0;
-                    V_testleg_6 = 0;
-                }
-
-
-
+                     
                 if (!enable_test_leg){
                     shield.power.start(test_leg);
                     enable_test_leg = true;
                     duty_cycle = lower_bound;
                     shield.power.setDutyCycle(test_leg, duty_cycle);                    
                 }
+
+                scope.acquire(); // enable scope acquisition
+                a_trigger();
+                scope.has_trigged();
 
                 if (dc_open_cycle){
                     
@@ -477,9 +521,7 @@ void loop_control_task()
                         mode = IDLE;
                     }
                 }
-                scope.acquire(); // enable scope acquisition
-                a_trigger();
-                scope.has_trigged();
+                
             } 
             else {
                 //Tests if the legs were turned off and does it only once ]
