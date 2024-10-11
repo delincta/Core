@@ -99,7 +99,7 @@ extern bool enable_acq;
 static float32_t trig_ratio;
 static float32_t begin_trig_ratio = 0.05;
 static float32_t end_trig_ratio = 0.95;
- uint32_t num_trig_ratio_point = 200;
+ uint32_t num_trig_ratio_point = 100;
 //static float32_t voltage_reference = 5.0; //voltage reference
 
 float32_t V_ref = 5;
@@ -150,77 +150,39 @@ enum serial_interface_menu_mode // LIST OF POSSIBLE MODES FOR THE OWNTECH CONVER
 };
 
 uint8_t mode_scope = IDLEMODE;
-
+uint8_t *buffer_scope = scope.get_buffer();
+uint16_t buffer_size = scope.get_buffer_size() >> 2; // we divide by 4 (4 bytes per float data)
 // trigger function for scope manager
 bool a_trigger() {
     return enable_acq;
 }
 
-// void dump_scope_datas(ScopeMimicry &scope)  {
-//     uint8_t *buffer_scope = scope.get_buffer();
-//     uint16_t buffer_size = scope.get_buffer_size() >> 2; // we divide by 4 (4 bytes per float data)
-//     printk("begin record\n");
-//     printk("#");
-//     for (uint16_t k=0;k < scope.get_nb_channel(); k++) {
-//         printk("%s,", scope.get_channel_name(k));
-//     }
-//     printk("\n");
-//     printk("# %d\n", scope.get_final_idx());
-//     for (uint16_t k=0;k < buffer_size; k++) {
-//         printk("%08x\n", *((uint32_t *)buffer_scope + k));
-//         task.suspendBackgroundUs(100);
-//     }
-//     printk("end record\n");
-// }
+void dump_scope_datas(ScopeMimicry &scope)  {
 
-
-
-void dump_scope_datas(ScopeMimicry &scope) {
-    uint8_t *buffer_scope = scope.get_buffer();
-    uint16_t buffer_size = scope.get_buffer_size() >> 2; // Taille du buffer en floats
-    const uint16_t segment_size = 100; // Taille d'un segment (nombre de données envoyées à la fois)
-    char command[20];
-
+    uint16_t segment_size = 1000;
+    uint16_t nb_data_dumped = 0;
     printk("begin record\n");
     printk("#");
-    for (uint16_t k = 0; k < scope.get_nb_channel(); k++) {
+    for (uint16_t k=0;k < scope.get_nb_channel(); k++) {
         printk("%s,", scope.get_channel_name(k));
     }
     printk("\n");
     printk("# %d\n", scope.get_final_idx());
-
-    // Envoyer les segments en réponse à une commande "NEXT_SEGMENT"
-    for (uint16_t k = 0; k < buffer_size; k += segment_size) {
-        uint16_t end = (k + segment_size > buffer_size) ? buffer_size : k + segment_size;
-
-        // Attendre la commande "NEXT_SEGMENT" avant d'envoyer un segment
-        int command_len = serial_read_command(command, sizeof(command));  // Fonction fictive pour lire la commande reçue sur le port série
-        if (command_len > 0 && strcmp(command, "NEXT_SEGMENT") == 0) {
-            // Envoyer un segment de données
-            for (uint16_t i = k; i < end; i++) {
-                printk("%08x\n", *((uint32_t *)buffer_scope + i));
-            }
-        }
+    
+    
+    for (uint16_t k=0;k < buffer_size; k++) {
+        printk("%08x\n", *((uint32_t *)buffer_scope));  
+        buffer_scope += sizeof(uint32_t);
+        // task.suspendBackgroundMs(50);
+        task.suspendBackgroundUs(100);
+        
     }
-
     printk("end record\n");
 }
 
-// Fonction pour lire la commande série du PC
-int serial_read_command(char* buffer, int max_len) {
-    int len = 0;
-    while (len < max_len) {
-        if (serial_available()) {  // Vérifier si des données sont disponibles sur le port série
-            buffer[len] = serial_read();  // Lire un caractère depuis le port série
-            if (buffer[len] == '\n') {
-                buffer[len] = '\0';  // Terminer la chaîne de caractères
-                break;
-            }
-            len++;
-        }
-    }
-    return len;
-}
+
+
+
 
 
 
@@ -505,6 +467,8 @@ void loop_control_task()
                         power_leg_settings[test_leg].duty_cycle = duty_cycle;
                         shield.power.setDutyCycle(test_leg,duty_cycle);
                         shield.power.stop(test_leg);
+                        buffer_scope = scope.get_buffer();
+                        buffer_size = scope.get_buffer_size() >> 2; // we divide by 4 (4 bytes per float data)
                         if (test_leg == LEG1) {
                             pid1.reset();
                         }
